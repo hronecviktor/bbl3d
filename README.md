@@ -9,6 +9,8 @@ Everything runs in the browser; logs are never uploaded.
 
 ## Run
 
+Needs Node 20.19+ (22 LTS recommended; `nvm use` picks it from `.nvmrc`).
+
 ```bash
 npm install
 npm run dev        # http://localhost:5173
