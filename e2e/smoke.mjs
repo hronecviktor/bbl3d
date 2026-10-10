@@ -6,6 +6,8 @@
 //   docker run --rm --network host -v "$PWD:/app" -w /app \
 //     mcr.microsoft.com/playwright:v1.58.0-noble node e2e/smoke.mjs
 //
+// Set E2E_URL to test an already running server instead (e.g. Caddy).
+//
 // Screenshots go to test-results/.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -13,15 +15,16 @@ import { chromium } from "playwright";
 
 const FIXTURE = "fixtures/btfl_006.bbl";
 const PORT = 4174;
+const URL = process.env.E2E_URL ?? `http://localhost:${PORT}/`;
 if (!fs.existsSync(FIXTURE)) {
   console.log(`skipped: ${FIXTURE} not found`);
   process.exit(0);
 }
 fs.mkdirSync("test-results", { recursive: true });
 
-const server = spawn(process.execPath, ["node_modules/vite/bin/vite.js", "preview", "--port", String(PORT), "--strictPort"], {
-  stdio: "ignore",
-});
+const server = process.env.E2E_URL
+  ? null
+  : spawn(process.execPath, ["node_modules/vite/bin/vite.js", "preview", "--port", String(PORT), "--strictPort"], { stdio: "ignore" });
 const failures = [];
 // Screenshots are for looking at, not assertions; software WebGL can stall them.
 const shot = (page, path) => page.screenshot({ path, timeout: 90_000 }).catch((e) => console.log(`(no screenshot ${path}: ${e.message.split("\n")[0]})`));
@@ -33,7 +36,7 @@ const check = (ok, what) => {
 try {
   for (let i = 0; i < 50; i++) {
     try {
-      if ((await fetch(`http://localhost:${PORT}/`)).ok) break;
+      if ((await fetch(URL)).ok) break;
     } catch {
       await new Promise((r) => setTimeout(r, 200));
     }
@@ -44,7 +47,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await page.goto(`http://localhost:${PORT}/`);
+  await page.goto(URL);
   await page.setInputFiles("input[type=file] >> nth=0", FIXTURE);
   await page.waitForSelector(".dialog .log", { timeout: 30_000 });
   check((await page.locator(".dialog .log").count()) === 5, "file lists 5 logs");
@@ -124,7 +127,7 @@ try {
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join("; ")}` : ""}`);
   await browser.close();
 } finally {
-  server.kill();
+  server?.kill();
 }
 if (failures.length) {
   console.log(`${failures.length} check(s) failed`);
