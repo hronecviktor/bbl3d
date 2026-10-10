@@ -5,6 +5,7 @@ export interface Sample {
   description: string;
   file: string;
   duration: number; // s
+  hidden?: boolean; // generated but not offered in the UI
 }
 
 let manifest: Promise<Sample[]> | null = null;
@@ -12,6 +13,7 @@ let manifest: Promise<Sample[]> | null = null;
 export function loadSamples(): Promise<Sample[]> {
   manifest ??= fetch("samples/samples.json")
     .then((r) => (r.ok ? r.json() : []))
+    .then((list: Sample[]) => list.filter((s) => !s.hidden))
     .catch(() => []);
   return manifest;
 }

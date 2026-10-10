@@ -86,7 +86,9 @@ try {
   await page.keyboard.press(" ");
   check((await page.locator(".timeline .time").innerText()) !== before, "playback advances the clock");
 
-  // the sample menu loads a bundled flight
+  // the sample menu offers the visible samples (Rio is hidden) and loads one
+  const offered = await page.locator("select[aria-label='Sample flights'] option").allInnerTexts();
+  check(offered.length === 3 && !offered.some((o) => o.includes("Rio")), "sample menu offers Paris and San Francisco only");
   await page.selectOption("select[aria-label='Sample flights']", "eiffel");
   await page.waitForFunction(() => document.querySelector("header .file")?.textContent?.includes("Eiffel"), null, { timeout: 30_000 });
   await page.keyboard.press("1");

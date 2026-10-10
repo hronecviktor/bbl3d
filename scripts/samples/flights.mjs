@@ -151,6 +151,8 @@ async function cristo() {
     .hold(2);
   return {
     id: "cristo",
+    // hidden from the UI until the replay is cleaned up; the log is still generated
+    hidden: true,
     title: "Christ the Redeemer, Rio de Janeiro",
     description: "An orbit around the statue, a dive off Corcovado toward the Lagoa, a power loop and the climb back to the summit.",
     plan: p,

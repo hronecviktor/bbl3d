@@ -18,6 +18,7 @@
     "title": "Christ the Redeemer, Rio de Janeiro",
     "description": "An orbit around the statue, a dive off Corcovado toward the Lagoa, a power loop and the climb back to the summit.",
     "file": "cristo.bbl",
-    "duration": 211
+    "duration": 211,
+    "hidden": true
   }
 ]

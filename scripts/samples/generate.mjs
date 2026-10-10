@@ -31,6 +31,13 @@ for (const make of FLIGHTS) {
     `${file}: ${duration.toFixed(0)} s, max ${(maxSpeed * 3.6).toFixed(0)} km/h, ` +
       `max specific force ${(maxAcc / 9.81).toFixed(1)} g, max height ${maxAlt.toFixed(0)} m, ${(bbl.length / 1e6).toFixed(1)} MB`,
   );
-  manifest.push({ id: f.id, title: f.title, description: f.description, file, duration: Math.round(duration) });
+  manifest.push({
+    id: f.id,
+    title: f.title,
+    description: f.description,
+    file,
+    duration: Math.round(duration),
+    ...(f.hidden ? { hidden: true } : {}),
+  });
 }
 fs.writeFileSync(path.join(OUT, "samples.json"), JSON.stringify(manifest, null, 2) + "\n");
