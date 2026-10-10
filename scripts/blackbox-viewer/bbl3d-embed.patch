@@ -1,0 +1,157 @@
+diff --git a/index.html b/index.html
+index 44b3693..5996e4d 100644
+--- a/index.html
++++ b/index.html
+@@ -49,7 +49,7 @@
+     <div id="vue-statusbar" class="vue-statusbar"></div>
+ 
+     <!-- Scripts -->
+-    <script src="/js/three.min.js"></script>
++    <script src="js/three.min.js"></script>
+     <div id="vue-app"></div>
+     <script type="module" src="src/vue_init.js"></script>
+     <script type="module" src="src/main.js"></script>
+diff --git a/src/components/AppToolbar.vue b/src/components/AppToolbar.vue
+index 3e460c3..ad7a1f1 100644
+--- a/src/components/AppToolbar.vue
++++ b/src/components/AppToolbar.vue
+@@ -3,7 +3,7 @@
+     <!-- Logo bar with amber accent bottom border -->
+     <div class="toolbar-logo">
+       <div class="flex items-center gap-2">
+-        <img src="/images/light-wide-2.svg" alt="Betaflight" class="toolbar-logo-img" />
++        <img :src="'images/light-wide-2.svg'" alt="Betaflight" class="toolbar-logo-img" />
+         <span class="toolbar-logo-subtitle">Blackbox Explorer</span>
+       </div>
+       <div class="flex items-center gap-3">
+diff --git a/src/components/WelcomePage.vue b/src/components/WelcomePage.vue
+index ad84d9a..f36143f 100644
+--- a/src/components/WelcomePage.vue
++++ b/src/components/WelcomePage.vue
+@@ -2,7 +2,7 @@
+   <div v-if="!logStore.hasLog" class="welcome-page">
+     <!-- Hero -->
+     <div class="hero">
+-      <img src="/images/light-wide-2.svg" alt="Betaflight" class="hero-logo" />
++      <img :src="'images/light-wide-2.svg'" alt="Betaflight" class="hero-logo" />
+       <p class="hero-subtitle">Blackbox Explorer</p>
+       <p class="hero-tagline">Analyze flight logs recorded by Betaflight's Blackbox feature</p>
+       <LogFileInput size="lg" label="Open log file / video" @files-selected="$emit('files-selected', $event)" />
+diff --git a/src/csv-exporter.js b/src/csv-exporter.js
+index 138f70c..b8b42d7 100644
+--- a/src/csv-exporter.js
++++ b/src/csv-exporter.js
+@@ -28,7 +28,7 @@ export function CsvExporter(flightLog, opts = {}) {
+           flightLog.getMaxTime(),
+         )
+         .map((chunk) => chunk.frames),
+-      worker = new Worker("/js/webworkers/csv-export-worker.js");
++      worker = new Worker("js/webworkers/csv-export-worker.js");
+ 
+     worker.onmessage = (event) => {
+       success(event.data);
+diff --git a/src/gpx-exporter.js b/src/gpx-exporter.js
+index cc4fade..d20412f 100644
+--- a/src/gpx-exporter.js
++++ b/src/gpx-exporter.js
+@@ -13,7 +13,7 @@ export function GpxExporter(flightLog) {
+           flightLog.getMaxTime(),
+         )
+         .map((chunk) => chunk.frames),
+-      worker = new Worker("/js/webworkers/gpx-export-worker.js");
++      worker = new Worker("js/webworkers/gpx-export-worker.js");
+ 
+     worker.onmessage = (event) => {
+       success(event.data);
+diff --git a/src/main.js b/src/main.js
+index 4088386..c8afd8a 100644
+--- a/src/main.js
++++ b/src/main.js
+@@ -529,6 +529,48 @@ function BlackboxLogViewer() {
+ 
+     seekBar.onSeek = setCurrentBlackboxTime;
+ 
++    // bbl3d embedding bridge: when shown in an iframe, the parent page can
++    // open a log (and pick the log in the file) and keep the playback time in
++    // sync. Messages: {bbl3d: 1, type: "open", name, bytes, index} and
++    // {bbl3d: 1, type: "seek", time} (µs, log clock) in; "loaded" and
++    // {type: "time", time} out.
++    if (globalThis.parent !== globalThis) {
++      const post = (msg) => globalThis.parent.postMessage({ bbl3d: 1, ...msg }, globalThis.location.origin);
++      let pendingIndex = null;
++      let seenLog = null;
++      let lastTime = null;
++      globalThis.addEventListener("message", (e) => {
++        if (e.source !== globalThis.parent || e.origin !== globalThis.location.origin || e.data?.bbl3d !== 1) return;
++        const m = e.data;
++        if (m.type === "open") {
++          pendingIndex = m.index ?? null;
++          loadFiles([new File([m.bytes], m.name)]);
++        } else if (m.type === "seek" && logStore.hasLog && Number.isFinite(m.time)) {
++          lastTime = m.time;
++          setCurrentBlackboxTime(m.time);
++        } else if (m.type === "resize") {
++          globalThis.dispatchEvent(new Event("resize"));
++        }
++      });
++      const tick = () => {
++        if (logStore.hasLog && logStore.flightLog !== seenLog) {
++          seenLog = logStore.flightLog;
++          if (pendingIndex !== null && pendingIndex !== playbackStore.currentOffsetCache.index) selectLog(pendingIndex);
++          pendingIndex = null;
++          // the start position is ours to set; don't report it back
++          lastTime = logStore.currentBlackboxTime;
++          post({ type: "loaded" });
++        }
++        const t = logStore.currentBlackboxTime;
++        if (logStore.hasLog && t !== lastTime) {
++          lastTime = t;
++          post({ type: "time", time: t });
++        }
++        requestAnimationFrame(tick);
++      };
++      requestAnimationFrame(tick);
++    }
++
+     if ("launchQueue" in globalThis) {
+       launchQueue.setConsumer(async (launchParams) => {
+         console.log("Opening files by extension in the desktop:", launchParams);
+diff --git a/src/spectrum-exporter.js b/src/spectrum-exporter.js
+index bf0415a..7ada9d0 100644
+--- a/src/spectrum-exporter.js
++++ b/src/spectrum-exporter.js
+@@ -21,7 +21,7 @@ export function SpectrumExporter(fftData, opts = {}) {
+    * @param {function} success is a callback triggered when export is done
+    */
+   function dump(success) {
+-    const worker = new Worker("/js/webworkers/spectrum-export-worker.js");
++    const worker = new Worker("js/webworkers/spectrum-export-worker.js");
+ 
+     worker.onmessage = (event) => {
+       success(event.data);
+diff --git a/vite.config.js b/vite.config.js
+index e7e776a..5694333 100644
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -5,7 +5,12 @@ import ui from "@nuxt/ui/vite";
+ import { VitePWA } from "vite-plugin-pwa";
+ import pkg from "./package.json";
+ 
++// bbl3d: embedded builds are served from a sub-folder inside an iframe; use
++// relative paths and skip the installable-app service worker.
++const embed = process.env.BBL3D_EMBED === "1";
++
+ export default defineConfig({
++  base: embed ? "./" : "/",
+   build: {
+     sourcemap: true,
+   },
+@@ -81,7 +86,7 @@ export default defineConfig({
+         },
+       },
+     }),
+-    VitePWA({
++    !embed && VitePWA({
+       registerType: "autoUpdate",
+       devOptions: { enabled: false },
+       workbox: {
