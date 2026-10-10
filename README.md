@@ -4,7 +4,7 @@
 
 ### Fly your Betaflight blackbox logs again, in 3D
 
-Drop in a `.bbl` and watch the flight replayed over a photorealistic 3D map,
+Drop in a `.bbl` and watch the flight replayed over a 3D map,
 with chase and FPV cameras, your sticks, an OSD-style HUD, and every logged
 field one click away.
 
