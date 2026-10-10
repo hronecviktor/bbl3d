@@ -20,7 +20,8 @@ import { terrariumTerrain } from "./terrain";
 export type MapMode = "google3d" | "estonia";
 
 const ESTONIA = Rectangle.fromDegrees(21.5, 57.4, 28.3, 59.9);
-const BUILDINGS_URL = "tiles/ee-buildings/tileset.json";
+// built locally by `npm run tiles:ee` (scripts/ee-3d)
+const LOCAL_TILESETS = ["tiles/ee-buildings/tileset.json", "tiles/ee-trees/tileset.json"];
 
 // The dev/preview servers answer unknown paths with index.html, so check the type too.
 async function exists(url: string) {
@@ -91,16 +92,18 @@ export async function applyMapMode(viewer: Viewer, mode: MapMode, ionToken: stri
       }),
     ),
   );
-  let tileset: Cesium3DTileset | null = null;
+  const primitives: Cesium3DTileset[] = [];
   let note: string | null = null;
-  if (await exists(BUILDINGS_URL)) {
+  for (const url of LOCAL_TILESETS) {
+    if (!(await exists(url))) continue;
     try {
-      tileset = await Cesium3DTileset.fromUrl(BUILDINGS_URL);
+      const tileset = await Cesium3DTileset.fromUrl(url, { maximumScreenSpaceError: 16 });
       scene.primitives.add(tileset);
+      primitives.push(tileset);
     } catch (e) {
-      note = `Local buildings failed to load: ${e instanceof Error ? e.message : e}`;
+      note = `${url} failed to load: ${e instanceof Error ? e.message : e}`;
     }
   }
-  // buildings are for looks; heights still come from the terrain
-  return { mode, tileset: null, primitives: tileset ? [tileset] : [], note };
+  // buildings and trees are for looks; heights still come from the terrain
+  return { mode, tileset: null, primitives, note };
 }

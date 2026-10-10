@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "model": "node scripts/make-quad-glb.mjs"
+    "model": "node scripts/make-quad-glb.mjs",
+    "tiles:ee": "node scripts/ee-3d/build.mjs"
   },
   "license": "GPL-3.0-only",
   "dependencies": {
@@ -21,6 +22,7 @@
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^26.6.5",
     "@types/semver": "^7.8.0",
+    "earcut": "^3.2.4",
     "svelte": "^5.57.2",
     "svelte-check": "^4.7.6",
     "typescript": "~5.9",

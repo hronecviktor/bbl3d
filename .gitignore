@@ -3,6 +3,6 @@ dist/
 fixtures/
 scratch/
 public/tiles/
-scripts/ee-buildings/work/
+scripts/ee-3d/work/
 test-results/
 playwright-report/
