@@ -11,6 +11,7 @@
   import Settings from "./ui/Settings.svelte";
   import Sticks from "./ui/Sticks.svelte";
   import Timeline from "./ui/Timeline.svelte";
+  import { fetchSample, loadSamples, type Sample } from "./ui/samples";
 
   let mapEl: HTMLDivElement;
   let map: MapView | null = $state(null);
@@ -105,6 +106,24 @@
     }
   }
 
+  const samples = loadSamples();
+
+  async function openSample(s: Sample) {
+    app.error = "";
+    app.loading = `Loading ${s.title}…`;
+    try {
+      const file = await fetchSample(s);
+      // samples are made for the photorealistic map
+      if (prefs.ionToken) prefs.mapMode = "google3d";
+      await openFile(file);
+      app.fileName = s.title;
+      if (!prefs.ionToken) app.note = "Sample flights look best on Google 3D: add a free Cesium ion token in Settings.";
+    } catch (e) {
+      app.error = `Could not load the sample: ${e instanceof Error ? e.message : e}`;
+      app.loading = "";
+    }
+  }
+
   async function pickLog(index: number) {
     if (!file) return;
     app.pickingLog = false;
@@ -178,6 +197,23 @@
       Open log…
       <input type="file" accept=".bbl,.bfl,.txt,.BBL,.BFL" onchange={(e) => e.currentTarget.files?.[0] && openFile(e.currentTarget.files[0])} />
     </label>
+    {#await samples then list}
+      {#if list.length}
+        <select
+          aria-label="Sample flights"
+          value=""
+          onchange={(e) => {
+            const s = list.find((x) => x.id === e.currentTarget.value);
+            e.currentTarget.value = "";
+            e.currentTarget.blur();
+            if (s) openSample(s);
+          }}
+        >
+          <option value="">Samples…</option>
+          {#each list as s}<option value={s.id}>{s.title}</option>{/each}
+        </select>
+      {/if}
+    {/await}
     <div class="spacer"></div>
     <div class="seg" role="group" aria-label="Camera">
       {#each CAMERAS as c}
@@ -199,7 +235,7 @@
       <Sticks />
     {/if}
     {#if !current.flight || dragging}
-      <DropZone {dragging} onfile={openFile} />
+      <DropZone {dragging} onfile={openFile} onsample={openSample} />
     {/if}
     {#if app.loading}<div class="toast">{app.loading}</div>{/if}
     {#if app.error}

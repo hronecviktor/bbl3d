@@ -84,6 +84,16 @@ try {
   await page.keyboard.press(" ");
   check((await page.locator(".timeline .time").innerText()) !== before, "playback advances the clock");
 
+  // the sample menu loads a bundled flight
+  await page.selectOption("select[aria-label='Sample flights']", "eiffel");
+  await page.waitForFunction(() => document.querySelector("header .file")?.textContent?.includes("Eiffel"), null, { timeout: 30_000 });
+  await page.keyboard.press("1");
+  await page.waitForTimeout(500);
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight"); // 0:30, spiral climb
+  await page.waitForTimeout(6000);
+  await page.screenshot({ path: "test-results/sample-eiffel.png" });
+  check((await page.locator(".hud").innerText()).includes("ARMED"), "sample flight loads from the menu");
+
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join("; ")}` : ""}`);
   await browser.close();
 } finally {
