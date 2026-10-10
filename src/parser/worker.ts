@@ -1,5 +1,5 @@
 // Parses blackbox files off the main thread.
-import { extractLog, listLogs, openFile } from "./extract";
+import { extractLog, listLogs, openFile, scanLog } from "./extract";
 
 export type WorkerRequest = { type: "open"; bytes: ArrayBuffer } | { type: "extract"; index: number };
 export type WorkerResponse =
@@ -13,7 +13,8 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   try {
     if (e.data.type === "open") {
       file = openFile(new Uint8Array(e.data.bytes));
-      post({ type: "logs", logs: listLogs(file) });
+      const f = file;
+      post({ type: "logs", logs: listLogs(f).map((s) => scanLog(f, s)) });
     } else {
       if (!file) throw new Error("no file open");
       const log = extractLog(file, e.data.index);

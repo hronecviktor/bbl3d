@@ -1,0 +1,65 @@
+:root {
+  --bg: #0d1117;
+  --panel: #151b23;
+  --line: #2a3340;
+  --fg: #e6edf3;
+  --muted: #8b97a3;
+  --accent: #ffb547;
+  --on-accent: #1b1300;
+  --warn: #e6a23c;
+  --bad: #e5534b;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+button,
+select {
+  background: #1d2530;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover,
+select:hover {
+  border-color: #3b4757;
+}
+button.active,
+button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+input[type="password"],
+input[type="text"] {
+  background: #0f141b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+a {
+  color: var(--accent);
+}
+/* Cesium credits sit above our sticks overlay */
+.cesium-widget-credits {
+  font-size: 10px;
+}

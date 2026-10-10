@@ -12,6 +12,10 @@ export interface LogSummary {
   firmware: string;
   logStart: string; // "Log start datetime" header
   hasGps: boolean;
+  // filled in by scanLog
+  maxSpeed?: number; // m/s
+  maxDistance?: number; // m from home
+  cutOff?: boolean; // no clean log end
 }
 
 export interface LogEvent {
@@ -127,4 +131,23 @@ function extractLogInner(log: any, index: number): ExtractedLog {
   const key = (e: LogEvent) => (Number.isFinite(e.time) ? e.time : Infinity);
   events.sort((a, b) => key(a) - key(b));
   return { index, fieldNames, time, columns, events, sysConfig: plainSysConfig(log) };
+}
+
+/** Quick per-log stats for the log picker. */
+export function scanLog(log: any, summary: LogSummary): LogSummary {
+  if (summary.error) return summary;
+  const x = extractLog(log, summary.index);
+  const col = (n: string) => x.columns[x.fieldNames.indexOf(n)] as ArrayLike<number> | undefined;
+  const max = (a: ArrayLike<number> | undefined, scale: number) => {
+    if (!a) return undefined;
+    let m = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] > m) m = a[i];
+    return m * scale;
+  };
+  return {
+    ...summary,
+    maxSpeed: max(col("GPS_speed"), 1 / 100),
+    maxDistance: max(col("gpsDistance"), 1),
+    cutOff: !x.events.some((e) => e.type === 255),
+  };
 }
