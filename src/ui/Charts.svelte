@@ -18,7 +18,7 @@
   });
   let panels: Panel[] = $state(DEFAULT_PANELS.map(panelFor));
   let xRange: [number, number] | null = $state(null);
-  let height = $state(Math.round(window.innerHeight * 0.38));
+
 
   // usable presets for this log (at least one field logged)
   const presets = $derived(PRESETS.filter((p) => p.fields.some((n) => f.has(n))));
@@ -42,8 +42,8 @@
 
   function startResize(e: PointerEvent) {
     const y0 = e.clientY;
-    const h0 = height;
-    const move = (ev: PointerEvent) => (height = Math.min(window.innerHeight * 0.8, Math.max(120, h0 - (ev.clientY - y0))));
+    const h0 = app.panelHeight;
+    const move = (ev: PointerEvent) => (app.panelHeight = Math.min(window.innerHeight * 0.85, Math.max(120, h0 - (ev.clientY - y0))));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -53,7 +53,7 @@
   }
 </script>
 
-<section class="charts" style="height: {height}px">
+<section class="charts" style="height: {app.panelHeight}px">
   <div class="grip" role="separator" aria-label="Resize charts" onpointerdown={startResize}></div>
   <div class="toolbar">
     <span class="hint">Drag to zoom · double-click to reset · click to seek</span>

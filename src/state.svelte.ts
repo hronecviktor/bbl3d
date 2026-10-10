@@ -59,8 +59,12 @@ export const app = $state({
   playing: false,
   rate: 1,
   camera: "chase" as CameraMode,
-  showCharts: true,
+  panel: "charts" as "charts" | "explorer" | null, // bottom panel
+  panelHeight: Math.round(window.innerHeight * 0.38),
   showSettings: false,
 });
 
 export const current = $state({ flight: null as Flight | null });
+
+/** The open file's bytes (a copy kept for the Blackbox Explorer). */
+export const openedFile: { name: string; bytes: ArrayBuffer | null } = { name: "", bytes: null };

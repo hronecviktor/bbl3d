@@ -24,6 +24,17 @@ Keys: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> ±5 s
 cameras, <kbd>c</kbd> charts. In charts: drag to zoom, double-click to reset,
 click to seek.
 
+## Blackbox Explorer
+
+**Explorer** in the header (or <kbd>e</kbd>) opens Betaflight's own
+[Blackbox Explorer](https://github.com/betaflight/blackbox-log-viewer) in the
+bottom panel with the same log, kept in sync with the replay in both
+directions: seeking either one moves the other. It's the unmodified viewer
+apart from a small embedding patch (`scripts/blackbox-viewer/bbl3d-embed.patch`:
+a postMessage bridge, relative asset paths, no service worker), built from a
+pinned upstream commit into `public/blackbox-viewer/` and committed.
+Rebuild with `npm run viewer` (needs Node 24, which the viewer requires).
+
 ## Sample flights
 
 Three synthetic flights ship in `public/samples/` and can be opened from the

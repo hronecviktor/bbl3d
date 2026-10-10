@@ -59,6 +59,8 @@ export class Flight {
   fieldNames: string[];
   readonly t: Float64Array; // s from log start
   readonly duration: number;
+  /** Log clock (µs) of the first frame; t = (logTime - startUs) / 1e6. */
+  readonly startUs: number;
   readonly gps: GpsTrack | null;
   readonly home: { lat: number; lon: number } | null;
   readonly modes: ModeInterval[];
@@ -93,6 +95,7 @@ export class Flight {
     this.fieldNames = x.fieldNames;
     x.fieldNames.forEach((n, i) => this.cols.set(n, x.columns[i]));
     const t0 = x.time[0] ?? 0;
+    this.startUs = t0;
     this.t = x.time.map((v) => (v - t0) / 1e6);
     this.duration = this.t.length ? this.t[this.t.length - 1] : 0;
 

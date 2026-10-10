@@ -3,7 +3,8 @@
   import { Flight } from "./flight/flight";
   import { MapView, type CameraMode } from "./map/mapview";
   import { LogFile } from "./parser/client";
-  import { app, current, prefs, savePrefs } from "./state.svelte";
+  import { app, current, openedFile, prefs, savePrefs } from "./state.svelte";
+  import Explorer from "./ui/Explorer.svelte";
   import Charts from "./ui/Charts.svelte";
   import DropZone from "./ui/DropZone.svelte";
   import Hud from "./ui/Hud.svelte";
@@ -17,6 +18,13 @@
   let map: MapView | null = $state(null);
   let file: LogFile | null = null;
   let dragging = $state(false);
+  let explorerOpened = $state(false);
+  $effect(() => {
+    if (app.panel !== "explorer") return;
+    explorerOpened = true;
+    // the explorer needs more room than the charts
+    untrack(() => (app.panelHeight = Math.max(app.panelHeight, Math.round(window.innerHeight * 0.5))));
+  });
 
   const CAMERAS: { id: CameraMode; label: string; key: string }[] = [
     { id: "chase", label: "Chase", key: "1" },
@@ -94,7 +102,11 @@
     try {
       file?.dispose();
       file = new LogFile();
-      app.logs = await file.open(await f.arrayBuffer());
+      const bytes = await f.arrayBuffer();
+      // the worker takes ownership of its copy; keep one for the Blackbox Explorer
+      openedFile.name = f.name;
+      openedFile.bytes = bytes.slice(0);
+      app.logs = await file.open(bytes);
       app.fileName = f.name;
       const usable = app.logs.filter((l) => !l.error);
       if (usable.length === 1) await pickLog(usable[0].index);
@@ -150,7 +162,8 @@
     const f = current.flight;
     const cam = CAMERAS.find((c) => c.key === e.key);
     if (cam) app.camera = cam.id;
-    else if (e.key === "c") app.showCharts = !app.showCharts;
+    else if (e.key === "c") app.panel = app.panel === "charts" ? null : "charts";
+    else if (e.key === "e") app.panel = app.panel === "explorer" ? null : "explorer";
     if (!f) return;
     const step = f.duration / Math.max(1, f.t.length - 1);
     const seek = (dt: number) => (app.t = Math.min(f.duration, Math.max(0, app.t + dt)));
@@ -224,7 +237,14 @@
       <option value="google3d">Google 3D</option>
       <option value="estonia">Open data (EE)</option>
     </select>
-    <button class:active={app.showCharts} onclick={() => (app.showCharts = !app.showCharts)} title="Charts (c)">Charts</button>
+    <div class="seg" role="group" aria-label="Bottom panel">
+      <button class:active={app.panel === "charts"} onclick={() => (app.panel = app.panel === "charts" ? null : "charts")} title="Charts (c)">Charts</button>
+      <button
+        class:active={app.panel === "explorer"}
+        onclick={() => (app.panel = app.panel === "explorer" ? null : "explorer")}
+        title="Betaflight Blackbox Explorer, synced with the replay (e)">Explorer</button
+      >
+    </div>
     <button onclick={() => (app.showSettings = true)} aria-label="Settings">⚙</button>
   </header>
 
@@ -247,7 +267,9 @@
 
   {#if current.flight}
     <Timeline />
-    {#if app.showCharts}<Charts />{/if}
+    {#if app.panel === "charts"}<Charts />{/if}
+    <!-- kept mounted once opened so the explorer keeps its state -->
+    {#if explorerOpened}<Explorer visible={app.panel === "explorer"} />{/if}
   {/if}
 </div>
 

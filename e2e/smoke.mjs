@@ -86,6 +86,29 @@ try {
   await page.keyboard.press(" ");
   check((await page.locator(".timeline .time").innerText()) !== before, "playback advances the clock");
 
+  // the Blackbox Explorer opens the same log and follows the replay clock
+  await page.keyboard.press("e");
+  await page.waitForSelector("section.explorer[data-synced=true]", { timeout: 60_000 });
+  check(true, "Blackbox Explorer loads the log");
+  // the explorer's own time field (mm:ss.mmm from the log start)
+  const viewerTime = () =>
+    page.frameLocator("iframe[title='Betaflight Blackbox Explorer']").locator("input").evaluateAll((els) => {
+      const v = els.map((e) => e.value).find((x) => /^\d\d:\d\d\.\d{3}$/.test(x));
+      if (!v) return null;
+      const [m, sec] = v.split(":");
+      return Number(m) * 60 + Number(sec);
+    });
+  const replayTime = async () => {
+    const [m, sec] = (await page.locator(".timeline .time").innerText()).split(" / ")[0].split(":");
+    return Number(m) * 60 + Number(sec);
+  };
+  for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(2500);
+  const [vt, rt] = [await viewerTime(), await replayTime()];
+  check(vt !== null && Math.abs(vt - rt) < 0.1, `Explorer follows the replay (${vt} s vs ${rt} s)`);
+  await shot(page, "test-results/explorer.png");
+  await page.keyboard.press("e");
+
   // the sample menu offers the visible samples (Rio is hidden) and loads one
   const offered = await page.locator("select[aria-label='Sample flights'] option").allInnerTexts();
   check(offered.length === 3 && !offered.some((o) => o.includes("Rio")), "sample menu offers Paris and San Francisco only");
