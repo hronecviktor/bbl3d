@@ -24,6 +24,17 @@ Keys: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> ±5 s
 cameras, <kbd>c</kbd> charts. In charts: drag to zoom, double-click to reset,
 click to seek.
 
+## Sample flights
+
+Three synthetic flights ship in `public/samples/` and can be opened from the
+start screen or the header's Samples menu: around the Eiffel Tower, the Golden
+Gate Bridge and Christ the Redeemer, made for the Google 3D map. They are
+generated from planned paths (`scripts/samples/`): thrust direction gives the
+attitude, which gives gyro, accelerometer, motors, battery, GPS and baro data,
+written as a real Betaflight 4.5-style `.bbl`. Paths were checked against
+OpenStreetMap structure positions and the Copernicus GLO-30 surface model.
+Regenerate with `npm run samples` (needs Docker for GDAL).
+
 ## Maps
 
 Two sources, switchable in the header; neither needs a credit card.

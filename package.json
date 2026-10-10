@@ -10,7 +10,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "model": "node scripts/make-quad-glb.mjs",
     "tiles:ee": "node scripts/ee-3d/build.mjs",
-    "e2e": "node e2e/smoke.mjs"
+    "e2e": "node e2e/smoke.mjs",
+    "samples": "node scripts/samples/generate.mjs"
   },
   "license": "GPL-3.0-only",
   "dependencies": {

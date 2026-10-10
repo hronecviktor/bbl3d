@@ -508,13 +508,17 @@ export class Flight {
       out[0][i] = aE[k] + (aE[k1] - aE[k]) * w;
       out[1][i] = aN[k] + (aN[k1] - aN[k]) * w;
     }
-    // vertical: second difference of the altitude over ±0.25 s
-    const alt = this.relAlt;
+    // vertical: second difference of the altitude, smoothed first. Baro noise
+    // would otherwise bias the expected tilt (atan(horizontal / (g + noise))
+    // grows on average), overestimating bank in turns.
+    const rate = samplesPerSecond(this.t);
+    const alt = gaussian(this.relAlt, 0.25 * rate);
+    const H = 0.5;
     let lo = 0;
     let hi = 0;
     for (let i = 0; i < n; i++) {
-      while (this.t[i] - this.t[lo] > 0.25) lo++;
-      while (hi < n - 1 && this.t[hi + 1] - this.t[i] <= 0.25) hi++;
+      while (this.t[i] - this.t[lo] > H) lo++;
+      while (hi < n - 1 && this.t[hi + 1] - this.t[i] <= H) hi++;
       const h1 = this.t[hi] - this.t[i];
       const h0 = this.t[i] - this.t[lo];
       out[2][i] = h0 > 0 && h1 > 0 ? (((alt[hi] - alt[i]) / h1 - (alt[i] - alt[lo]) / h0) * 2) / (h0 + h1) : 0;

@@ -134,16 +134,19 @@ export function estimateAttitude(inp: AttitudeInput): Attitude {
       wz += KP_TILT * ez + bias[2];
     }
 
-    // --- heading correction from the GPS course (rotation about world up) ---
+    // --- heading correction from the GPS course ---
+    // Turn about the body z (thrust) axis: that moves the nose without
+    // changing the tilt, so it doesn't fight the tilt correction above, which
+    // a turn about world up would do whenever the quad is banked.
     const course = inp.course(i);
     if (!Number.isNaN(course)) {
-      const yaw = toEuler(q)[2];
-      const err = Math.atan2(Math.sin(course - yaw), Math.cos(course - yaw));
-      // compass heading grows clockwise, i.e. a negative rotation about world up
-      const [bx, by, bz] = rotateInv(q, [0, 0, -KP_YAW * err]);
-      wx += bx;
-      wy += by;
-      wz += bz;
+      const up = rotate(q, [0, 0, 1]);
+      if (up[2] > 0.3) {
+        const yaw = toEuler(q)[2];
+        const err = Math.atan2(Math.sin(course - yaw), Math.cos(course - yaw));
+        // compass heading grows clockwise, i.e. a negative turn about body z
+        wz -= (KP_YAW * err) / up[2];
+      }
     }
 
     q = integrate(q, wx, wy, wz, dt);
