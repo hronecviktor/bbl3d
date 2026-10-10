@@ -23,6 +23,8 @@ const server = spawn(process.execPath, ["node_modules/vite/bin/vite.js", "previe
   stdio: "ignore",
 });
 const failures = [];
+// Screenshots are for looking at, not assertions; software WebGL can stall them.
+const shot = (page, path) => page.screenshot({ path, timeout: 90_000 }).catch((e) => console.log(`(no screenshot ${path}: ${e.message.split("\n")[0]})`));
 const check = (ok, what) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
   if (!ok) failures.push(what);
@@ -59,7 +61,7 @@ try {
   for (const [key, cam] of [["1", "chase"], ["2", "fpv"], ["4", "top"]]) {
     await page.keyboard.press(key);
     await page.waitForTimeout(6000);
-    await page.screenshot({ path: `test-results/${cam}.png` });
+    await shot(page, `test-results/${cam}.png`);
   }
   // switching smoothing rebuilds the track
   await page.keyboard.press("1");
@@ -67,7 +69,7 @@ try {
     await page.selectOption("select[aria-label='Smoothing']", level);
     await page.waitForTimeout(1500);
   }
-  await page.screenshot({ path: "test-results/chase-smoothed.png" });
+  await shot(page, "test-results/chase-smoothed.png");
   // the above-ground switch is on by default and can be toggled
   const lift = page.locator(".timeline .toggle input");
   check(await lift.isChecked(), "above-ground correction is on by default");
@@ -91,7 +93,7 @@ try {
   await page.waitForTimeout(500);
   for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight"); // 0:30, spiral climb
   await page.waitForTimeout(6000);
-  await page.screenshot({ path: "test-results/sample-eiffel.png" });
+  await shot(page, "test-results/sample-eiffel.png");
   check((await page.locator(".hud").innerText()).includes("ARMED"), "sample flight loads from the menu");
 
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join("; ")}` : ""}`);
