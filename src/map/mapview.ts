@@ -100,6 +100,13 @@ export class MapView {
     if (flight && this.layers) await this.addFlightVisuals(gen);
   }
 
+  /** Rebuild the track and model after the flight's smoothing changed. */
+  async redraw() {
+    const gen = ++this.generation;
+    this.removeFlightVisuals();
+    if (this.flight && this.layers) await this.addFlightVisuals(gen);
+  }
+
   private removeFlightVisuals() {
     const prims = this.viewer.scene.primitives;
     if (this.quad) prims.remove(this.quad);
@@ -245,12 +252,12 @@ function speedColor(v: number) {
 }
 
 function trackPrimitive(f: Flight, at: (t: number) => Cartesian3) {
-  const g = f.gps!;
   const positions: Cartesian3[] = [];
   const colors: Color[] = [];
-  for (let k = 0; k < g.t.length; k++) {
-    positions.push(at(g.t[k]));
-    colors.push(speedColor(g.speed[k]));
+  for (const t of f.trackTimes()) {
+    positions.push(at(t));
+    const v = f.valueAt("GPS_speed", t);
+    colors.push(speedColor(Number.isFinite(v) ? v : 0));
   }
   return new Primitive({
     geometryInstances: new GeometryInstance({

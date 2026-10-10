@@ -13,6 +13,7 @@ export interface Prefs {
   fpvFov: number;
   chaseDistance: number;
   imperial: boolean;
+  smoothing: number; // index into SMOOTHING
 }
 
 const PREFS_KEY = "bbl3d.prefs";
@@ -24,6 +25,7 @@ const defaults: Prefs = {
   fpvFov: 118,
   chaseDistance: 6,
   imperial: false,
+  smoothing: 2,
 };
 
 function loadPrefs(): Prefs {

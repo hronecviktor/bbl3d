@@ -1,6 +1,7 @@
 <script lang="ts">
   import { MODE_LABEL } from "../flight/modes";
-  import { app, current } from "../state.svelte";
+  import { SMOOTHING } from "../flight/smooth";
+  import { app, current, prefs } from "../state.svelte";
   import { fmtDuration } from "./format";
 
   const f = $derived(current.flight!);
@@ -39,8 +40,11 @@
     aria-label={app.playing ? "Pause" : "Play"}>{app.playing ? "❚❚" : "▶"}</button
   >
   <span class="time">{fmtDuration(app.t)} / {fmtDuration(f.duration)}</span>
-  <select bind:value={app.rate} aria-label="Playback speed">
+  <select bind:value={app.rate} aria-label="Playback speed" title="Playback speed">
     {#each RATES as r}<option value={r}>{r}×</option>{/each}
+  </select>
+  <select bind:value={prefs.smoothing} aria-label="Smoothing" title="Smoothing of the track and attitude (charts stay raw)">
+    {#each SMOOTHING as s, i}<option value={i}>Smooth: {s.label}</option>{/each}
   </select>
   <div
     class="bar"

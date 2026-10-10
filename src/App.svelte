@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Flight } from "./flight/flight";
   import { MapView, type CameraMode } from "./map/mapview";
   import { LogFile } from "./parser/client";
@@ -59,6 +59,19 @@
     map.setMapMode(mode, token).then((note) => (app.note = note ?? ""));
   });
 
+  // display smoothing: recompute the pose source and redraw the track
+  let appliedSmoothing = -1;
+  $effect(() => {
+    const level = prefs.smoothing;
+    untrack(() => {
+      const f = current.flight;
+      if (!f || !map || level === appliedSmoothing) return;
+      appliedSmoothing = level;
+      f.setSmoothing(level);
+      map.redraw();
+    });
+  });
+
   // camera and view settings
   $effect(() => {
     if (!map) return;
@@ -96,6 +109,8 @@
     app.playing = false;
     try {
       const flight = new Flight(await file.extract(index), app.logs[index]);
+      flight.setSmoothing(prefs.smoothing);
+      appliedSmoothing = prefs.smoothing;
       current.flight = flight;
       app.t = 0;
       if (!flight.gps) app.note = "This log has no GPS data, so there's no track to show on the map.";

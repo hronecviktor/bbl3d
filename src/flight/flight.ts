@@ -4,6 +4,7 @@
 import type { ExtractedLog, LogSummary } from "../parser/extract";
 import { estimateAttitude, type Attitude } from "./attitude";
 import { boxNames, decodeModes, modeIntervals, type ModeInterval } from "./modes";
+import { SMOOTHING, catmullRom, gaussian, samplesPerSecond, smoothAttitude } from "./smooth";
 
 export const EVENT = { SYNC_BEEP: 0, INFLIGHT_ADJUSTMENT: 13, LOGGING_RESUME: 14, DISARM: 15, FLIGHT_MODE: 30, LOG_END: 255 };
 
@@ -39,6 +40,15 @@ export interface Pose {
   yaw: number; // rad, 0 = north, clockwise
 }
 
+/** What poseAt draws from: raw or smoothed copies of the track and attitude. */
+interface PoseSource {
+  lat: Float64Array; // per GPS fix
+  lon: Float64Array;
+  relAlt: Float32Array; // per frame
+  attitude: Attitude;
+  curved: boolean; // Catmull-Rom between fixes instead of straight lines
+}
+
 const COURSE_MIN_SPEED = 5; // m/s; below this the GPS course is too noisy for heading
 
 export class Flight {
@@ -63,6 +73,10 @@ export class Flight {
   readonly cells: number;
 
   private cols = new Map<string, Float32Array | Float64Array>();
+  private sources = new Map<number, PoseSource>();
+  private source!: PoseSource;
+  /** Index into SMOOTHING used by poseAt. */
+  smoothing = 0;
   private converted = new Map<string, Float32Array | Float64Array>();
 
   constructor(x: ExtractedLog, summary: LogSummary) {
@@ -90,6 +104,7 @@ export class Flight {
     this.cols.set("attitude.pitch", deg(this.attitude.pitch));
     this.cols.set("attitude.heading", deg(this.attitude.yaw));
     this.fieldNames = [...this.fieldNames, "attitude.roll", "attitude.pitch", "attitude.heading"];
+    this.setSmoothing(0);
     this.mAh = this.buildMah();
     this.cells = this.estimateCells();
   }
@@ -190,36 +205,76 @@ export class Flight {
     return decodeModes(mask[this.indexAt(t)] | 0, this.boxNames);
   }
 
+  /** Pick the display smoothing (index into SMOOTHING); results are cached per level. */
+  setSmoothing(level: number) {
+    const lvl = Math.max(0, Math.min(SMOOTHING.length - 1, level));
+    this.smoothing = lvl;
+    let src = this.sources.get(lvl);
+    if (!src) {
+      const { track, attitude } = SMOOTHING[lvl];
+      const g = this.gps;
+      const fixRate = g ? samplesPerSecond(g.t) : 1;
+      src = {
+        lat: g ? gaussian(g.lat, track * fixRate) : new Float64Array(),
+        lon: g ? gaussian(g.lon, track * fixRate) : new Float64Array(),
+        relAlt: gaussian(this.relAlt, track * samplesPerSecond(this.t)),
+        attitude: smoothAttitude(this.attitude, this.t, attitude),
+        curved: track > 0,
+      };
+      this.sources.set(lvl, src);
+    }
+    this.source = src;
+  }
+
+  /** Times worth sampling to draw the track: every fix, plus in-between points when curved. */
+  trackTimes(): number[] {
+    const g = this.gps;
+    if (!g) return [];
+    const sub = this.source.curved ? 4 : 1;
+    const out: number[] = [];
+    for (let k = 0; k < g.t.length; k++) {
+      out.push(g.t[k]);
+      if (k + 1 < g.t.length) for (let s = 1; s < sub; s++) out.push(g.t[k] + ((g.t[k + 1] - g.t[k]) * s) / sub);
+    }
+    return out;
+  }
+
   poseAt(t: number): Pose | null {
     const g = this.gps;
     if (!g || !g.t.length) return null;
+    const src = this.source;
     const i = this.indexAt(t);
     const j = Math.min(i + 1, this.t.length - 1);
     const span = this.t[j] - this.t[i];
     const k = span > 0 ? Math.min(1, Math.max(0, (t - this.t[i]) / span)) : 0;
     const lerp = (a: ArrayLike<number>) => a[i] + (a[j] - a[i]) * k;
     const lerpAngle = (a: ArrayLike<number>) => a[i] + wrapPi(a[j] - a[i]) * k;
-    const att = this.attitude;
+    const att = src.attitude;
 
-    // GPS position, interpolated between fixes
-    let gi = upperBound(g.t, t) - 1;
+    // GPS position between fixes: straight, or a Catmull-Rom curve when smoothing
+    const gi = upperBound(g.t, t) - 1;
+    const m = g.t.length;
     let lat: number, lon: number;
-    if (gi < 0) {
-      lat = g.lat[0];
-      lon = g.lon[0];
-    } else if (gi >= g.t.length - 1) {
-      gi = g.t.length - 1;
-      lat = g.lat[gi];
-      lon = g.lon[gi];
+    if (gi < 0 || gi >= m - 1) {
+      const k0 = gi < 0 ? 0 : m - 1;
+      lat = src.lat[k0];
+      lon = src.lon[k0];
     } else {
       const gk = (t - g.t[gi]) / (g.t[gi + 1] - g.t[gi]);
-      lat = g.lat[gi] + (g.lat[gi + 1] - g.lat[gi]) * gk;
-      lon = g.lon[gi] + (g.lon[gi + 1] - g.lon[gi]) * gk;
+      const k0 = Math.max(0, gi - 1);
+      const k3 = Math.min(m - 1, gi + 2);
+      if (src.curved) {
+        lat = catmullRom(src.lat[k0], src.lat[gi], src.lat[gi + 1], src.lat[k3], gk);
+        lon = catmullRom(src.lon[k0], src.lon[gi], src.lon[gi + 1], src.lon[k3], gk);
+      } else {
+        lat = src.lat[gi] + (src.lat[gi + 1] - src.lat[gi]) * gk;
+        lon = src.lon[gi] + (src.lon[gi + 1] - src.lon[gi]) * gk;
+      }
     }
     return {
       lat,
       lon,
-      relAlt: lerp(this.relAlt),
+      relAlt: lerp(src.relAlt),
       roll: lerpAngle(att.roll),
       pitch: lerpAngle(att.pitch),
       yaw: lerpAngle(att.yaw),

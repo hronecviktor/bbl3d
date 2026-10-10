@@ -61,6 +61,13 @@ try {
     await page.waitForTimeout(6000);
     await page.screenshot({ path: `test-results/${cam}.png` });
   }
+  // switching smoothing rebuilds the track
+  await page.keyboard.press("1");
+  for (const level of ["0", "3", "2"]) {
+    await page.selectOption("select[aria-label='Smoothing']", level);
+    await page.waitForTimeout(1500);
+  }
+  await page.screenshot({ path: "test-results/chase-smoothed.png" });
   check((await page.locator(".cesium-widget-errorPanel").count()) === 0, "Cesium rendered without errors");
 
   // playback advances

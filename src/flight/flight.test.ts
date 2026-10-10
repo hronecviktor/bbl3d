@@ -124,4 +124,33 @@ describe.skipIf(!have("btfl_010.bbl"))("btfl_010 (6 min cruise)", () => {
     expect(errs.length).toBeGreaterThan(500);
     expect(errs[errs.length >> 1]).toBeLessThan(rad(12));
   });
+
+  it("smooths the replay without distorting it", () => {
+    // jaggedness: mean second difference of altitude and roll at 50 Hz
+    const jag = () => {
+      let alt = 0;
+      let roll = 0;
+      let n = 0;
+      for (let t = 10; t < 300; t += 0.02) {
+        const [a, b, c] = [t, t + 0.02, t + 0.04].map((x) => flight.poseAt(x)!);
+        alt += Math.abs(a.relAlt - 2 * b.relAlt + c.relAlt);
+        roll += Math.abs(wrapPi(a.roll - 2 * b.roll + c.roll));
+        n++;
+      }
+      return { alt: alt / n, roll: roll / n };
+    };
+    flight.setSmoothing(0);
+    const raw = jag();
+    const rawPose = flight.poseAt(200)!;
+    flight.setSmoothing(2);
+    const smooth = jag();
+    const pose = flight.poseAt(200)!;
+    flight.setSmoothing(0);
+    expect(smooth.alt).toBeLessThan(raw.alt * 0.2);
+    expect(smooth.roll).toBeLessThan(raw.roll * 0.5);
+    // still the same flight: within a few metres and degrees
+    const R = 6371000;
+    expect(Math.hypot(rad(pose.lat - rawPose.lat) * R, rad(pose.lon - rawPose.lon) * R * Math.cos(rad(pose.lat)))).toBeLessThan(5);
+    expect(Math.abs(wrapPi(pose.yaw - rawPose.yaw))).toBeLessThan(rad(15));
+  });
 });
