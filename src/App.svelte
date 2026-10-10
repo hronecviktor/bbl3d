@@ -59,14 +59,17 @@
     map.setMapMode(mode, token).then((note) => (app.note = note ?? ""));
   });
 
-  // display smoothing: recompute the pose source and redraw the track
-  let appliedSmoothing = -1;
+  // display smoothing and terrain lift: recompute the pose source and redraw the track
+  let applied = "";
   $effect(() => {
     const level = prefs.smoothing;
+    const lift = prefs.aboveGround;
     untrack(() => {
       const f = current.flight;
-      if (!f || !map || level === appliedSmoothing) return;
-      appliedSmoothing = level;
+      const key = `${level}:${lift}`;
+      if (!f || !map || key === applied) return;
+      applied = key;
+      f.setAboveGround(lift);
       f.setSmoothing(level);
       map.redraw();
     });
@@ -109,8 +112,9 @@
     app.playing = false;
     try {
       const flight = new Flight(await file.extract(index), app.logs[index]);
+      flight.setAboveGround(prefs.aboveGround);
       flight.setSmoothing(prefs.smoothing);
-      appliedSmoothing = prefs.smoothing;
+      applied = `${prefs.smoothing}:${prefs.aboveGround}`;
       current.flight = flight;
       app.t = 0;
       if (!flight.gps) app.note = "This log has no GPS data, so there's no track to show on the map.";

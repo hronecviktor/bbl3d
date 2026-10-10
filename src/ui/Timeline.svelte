@@ -28,6 +28,8 @@
     app.t = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * f.duration;
   }
   const pct = (t: number) => `${(t / f.duration) * 100}%`;
+  // give focus back so Space/arrows keep controlling playback
+  const release = (e: Event) => (e.currentTarget as HTMLElement).blur();
 </script>
 
 <div class="timeline">
@@ -40,12 +42,15 @@
     aria-label={app.playing ? "Pause" : "Play"}>{app.playing ? "❚❚" : "▶"}</button
   >
   <span class="time">{fmtDuration(app.t)} / {fmtDuration(f.duration)}</span>
-  <select bind:value={app.rate} aria-label="Playback speed" title="Playback speed">
+  <select bind:value={app.rate} onchange={release} aria-label="Playback speed" title="Playback speed">
     {#each RATES as r}<option value={r}>{r}×</option>{/each}
   </select>
-  <select bind:value={prefs.smoothing} aria-label="Smoothing" title="Smoothing of the track and attitude (charts stay raw)">
+  <select bind:value={prefs.smoothing} onchange={release} aria-label="Smoothing" title="Smoothing of the track and attitude (charts stay raw)">
     {#each SMOOTHING as s, i}<option value={i}>Smooth: {s.label}</option>{/each}
   </select>
+  <label class="toggle" title="Correct altitude drift so the path never goes below the terrain">
+    <input type="checkbox" bind:checked={prefs.aboveGround} onchange={release} /> Above ground
+  </label>
   <div
     class="bar"
     bind:this={bar}
@@ -94,6 +99,17 @@
   .time {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #1d2530;
+    cursor: pointer;
   }
   .bar {
     position: relative;

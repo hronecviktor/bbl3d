@@ -68,6 +68,13 @@ try {
     await page.waitForTimeout(1500);
   }
   await page.screenshot({ path: "test-results/chase-smoothed.png" });
+  // the above-ground switch is on by default and can be toggled
+  const lift = page.locator(".timeline .toggle input");
+  check(await lift.isChecked(), "above-ground correction is on by default");
+  await lift.uncheck();
+  await page.waitForTimeout(1500);
+  await lift.check();
+  await page.waitForTimeout(1500);
   check((await page.locator(".cesium-widget-errorPanel").count()) === 0, "Cesium rendered without errors");
 
   // playback advances

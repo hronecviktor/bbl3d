@@ -46,6 +46,43 @@ export async function terrainHeightAt(lat: number, lon: number): Promise<number 
   return bilinear(tile, Math.min(255, (fx - x) * 256), Math.min(255, (fy - y) * 256));
 }
 
+/**
+ * Load the terrain tiles covering a lat/lon box (plus a margin) and return a
+ * synchronous sampler over them; it returns null outside the loaded tiles.
+ */
+export async function terrainSampler(
+  south: number,
+  west: number,
+  north: number,
+  east: number,
+): Promise<((lat: number, lon: number) => number | null) | null> {
+  const n = 1 << MAX_ZOOM;
+  const tx = (lon: number) => ((lon + 180) / 360) * n;
+  const ty = (lat: number) => ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n;
+  const pad = 0.002;
+  const x0 = Math.floor(tx(west - pad));
+  const x1 = Math.floor(tx(east + pad));
+  const y0 = Math.floor(ty(north + pad));
+  const y1 = Math.floor(ty(south - pad));
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) return null; // a flight shouldn't span this much
+  const tiles = new Map<string, Float32Array>();
+  const jobs: Promise<void>[] = [];
+  for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1; y++) {
+      jobs.push(fetchTile(MAX_ZOOM, x, y).then((h) => void (h && tiles.set(`${x}/${y}`, h))));
+    }
+  }
+  await Promise.all(jobs);
+  return (lat, lon) => {
+    const fx = tx(lon);
+    const fy = ty(lat);
+    const x = Math.floor(fx);
+    const y = Math.floor(fy);
+    const h = tiles.get(`${x}/${y}`);
+    return h ? bilinear(h, Math.min(255, (fx - x) * 256), Math.min(255, (fy - y) * 256)) : null;
+  };
+}
+
 export function terrariumTerrain() {
   return new CustomHeightmapTerrainProvider({
     width: SIZE,

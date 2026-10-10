@@ -4,7 +4,7 @@
 import type { ExtractedLog, LogSummary } from "../parser/extract";
 import { estimateAttitude, type Attitude } from "./attitude";
 import { boxNames, decodeModes, modeIntervals, type ModeInterval } from "./modes";
-import { SMOOTHING, catmullRom, gaussian, samplesPerSecond, smoothAttitude } from "./smooth";
+import { SMOOTHING, catmullRom, gaussian, liftAboveGround, samplesPerSecond, smoothAttitude } from "./smooth";
 
 export const EVENT = { SYNC_BEEP: 0, INFLIGHT_ADJUSTMENT: 13, LOGGING_RESUME: 14, DISARM: 15, FLIGHT_MODE: 30, LOG_END: 255 };
 
@@ -49,6 +49,8 @@ interface PoseSource {
   curved: boolean; // Catmull-Rom between fixes instead of straight lines
 }
 
+const LIFT_WINDOW = 8; // s over which a terrain correction is eased in and out
+
 const COURSE_MIN_SPEED = 5; // m/s; below this the GPS course is too noisy for heading
 
 export class Flight {
@@ -77,6 +79,10 @@ export class Flight {
   private source!: PoseSource;
   /** Index into SMOOTHING used by poseAt. */
   smoothing = 0;
+  /** Keep the replayed path from dipping below the terrain (needs setTerrain). */
+  aboveGround = true;
+  // terrain height (m) at a position, absolute; only differences are used
+  private terrain: ((lat: number, lon: number) => number | null) | null = null;
   private converted = new Map<string, Float32Array | Float64Array>();
 
   constructor(x: ExtractedLog, summary: LogSummary) {
@@ -206,6 +212,44 @@ export class Flight {
   }
 
   /** Pick the display smoothing (index into SMOOTHING); results are cached per level. */
+  get hasTerrain() {
+    return this.terrain !== null;
+  }
+
+  /** Terrain height sampler (synchronous, absolute metres); null to clear. */
+  setTerrain(sampler: ((lat: number, lon: number) => number | null) | null) {
+    this.terrain = sampler;
+    this.sources.clear();
+    this.setSmoothing(this.smoothing);
+  }
+
+  setAboveGround(on: boolean) {
+    if (on === this.aboveGround) return;
+    this.aboveGround = on;
+    this.sources.clear();
+    this.setSmoothing(this.smoothing);
+  }
+
+  /**
+   * Ground height relative to home under the given path at every frame, or
+   * null without terrain. Sampled along the final (smoothed, curved) path so
+   * the lift matches what is drawn.
+   */
+  private groundProfile(path: Pick<PoseSource, "lat" | "lon" | "curved">): Float32Array | null {
+    const sample = this.terrain;
+    if (!sample || !this.gps || !this.home) return null;
+    const home = sample(this.home.lat, this.home.lon);
+    if (home === null) return null;
+    const out = new Float32Array(this.t.length);
+    for (let i = 0; i < out.length; i++) {
+      const { lat, lon } = this.horizontal(path, this.t[i]);
+      const h = sample(lat, lon);
+      if (h === null) return null;
+      out[i] = h - home;
+    }
+    return out;
+  }
+
   setSmoothing(level: number) {
     const lvl = Math.max(0, Math.min(SMOOTHING.length - 1, level));
     this.smoothing = lvl;
@@ -214,16 +258,52 @@ export class Flight {
       const { track, attitude } = SMOOTHING[lvl];
       const g = this.gps;
       const fixRate = g ? samplesPerSecond(g.t) : 1;
-      src = {
+      const path = {
         lat: g ? gaussian(g.lat, track * fixRate) : new Float64Array(),
         lon: g ? gaussian(g.lon, track * fixRate) : new Float64Array(),
-        relAlt: gaussian(this.relAlt, track * samplesPerSecond(this.t)),
-        attitude: smoothAttitude(this.attitude, this.t, attitude),
         curved: track > 0,
+      };
+      src = {
+        ...path,
+        relAlt: this.altitudeFor(track, path),
+        attitude: smoothAttitude(this.attitude, this.t, attitude),
       };
       this.sources.set(lvl, src);
     }
     this.source = src;
+  }
+
+  /** Smoothed altitude, then (as the last step) lifted above the ground under the smoothed path. */
+  private altitudeFor(trackSigma: number, path: Pick<PoseSource, "lat" | "lon" | "curved">): Float32Array {
+    const rate = samplesPerSecond(this.t);
+    const alt = gaussian(this.relAlt, trackSigma * rate);
+    const ground = this.aboveGround ? this.groundProfile(path) : null;
+    return ground ? liftAboveGround(alt, ground, LIFT_WINDOW * rate) : alt;
+  }
+
+  /** Position along the (possibly smoothed and curved) GPS path at time t. */
+  private horizontal(src: Pick<PoseSource, "lat" | "lon" | "curved">, t: number): { lat: number; lon: number } {
+    const g = this.gps!;
+    const gi = upperBound(g.t, t) - 1;
+    const m = g.t.length;
+    if (gi < 0 || gi >= m - 1) {
+      const k0 = gi < 0 ? 0 : m - 1;
+      return { lat: src.lat[k0], lon: src.lon[k0] };
+    }
+    const gk = (t - g.t[gi]) / (g.t[gi + 1] - g.t[gi]);
+    if (!src.curved) {
+      return {
+        lat: src.lat[gi] + (src.lat[gi + 1] - src.lat[gi]) * gk,
+        lon: src.lon[gi] + (src.lon[gi + 1] - src.lon[gi]) * gk,
+      };
+    }
+    // Catmull-Rom between fixes when smoothing
+    const k0 = Math.max(0, gi - 1);
+    const k3 = Math.min(m - 1, gi + 2);
+    return {
+      lat: catmullRom(src.lat[k0], src.lat[gi], src.lat[gi + 1], src.lat[k3], gk),
+      lon: catmullRom(src.lon[k0], src.lon[gi], src.lon[gi + 1], src.lon[k3], gk),
+    };
   }
 
   /** Times worth sampling to draw the track: every fix, plus in-between points when curved. */
@@ -251,26 +331,7 @@ export class Flight {
     const lerpAngle = (a: ArrayLike<number>) => a[i] + wrapPi(a[j] - a[i]) * k;
     const att = src.attitude;
 
-    // GPS position between fixes: straight, or a Catmull-Rom curve when smoothing
-    const gi = upperBound(g.t, t) - 1;
-    const m = g.t.length;
-    let lat: number, lon: number;
-    if (gi < 0 || gi >= m - 1) {
-      const k0 = gi < 0 ? 0 : m - 1;
-      lat = src.lat[k0];
-      lon = src.lon[k0];
-    } else {
-      const gk = (t - g.t[gi]) / (g.t[gi + 1] - g.t[gi]);
-      const k0 = Math.max(0, gi - 1);
-      const k3 = Math.min(m - 1, gi + 2);
-      if (src.curved) {
-        lat = catmullRom(src.lat[k0], src.lat[gi], src.lat[gi + 1], src.lat[k3], gk);
-        lon = catmullRom(src.lon[k0], src.lon[gi], src.lon[gi + 1], src.lon[k3], gk);
-      } else {
-        lat = src.lat[gi] + (src.lat[gi + 1] - src.lat[gi]) * gk;
-        lon = src.lon[gi] + (src.lon[gi + 1] - src.lon[gi]) * gk;
-      }
-    }
+    const { lat, lon } = this.horizontal(src, t);
     return {
       lat,
       lon,

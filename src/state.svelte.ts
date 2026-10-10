@@ -14,6 +14,7 @@ export interface Prefs {
   chaseDistance: number;
   imperial: boolean;
   smoothing: number; // index into SMOOTHING
+  aboveGround: boolean; // lift the path where altitude drift puts it underground
 }
 
 const PREFS_KEY = "bbl3d.prefs";
@@ -26,6 +27,7 @@ const defaults: Prefs = {
   chaseDistance: 6,
   imperial: false,
   smoothing: 2,
+  aboveGround: true,
 };
 
 function loadPrefs(): Prefs {

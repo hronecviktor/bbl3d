@@ -21,7 +21,7 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { Flight, Pose } from "../flight/flight";
 import { applyMapMode, removeLayers, type ActiveLayers, type MapMode } from "./layers";
-import { terrainHeightAt } from "./terrain";
+import { terrainHeightAt, terrainSampler } from "./terrain";
 
 export type CameraMode = "chase" | "fpv" | "orbit" | "top";
 
@@ -122,6 +122,21 @@ export class MapView {
     const ground = await this.sampleGround(f.home.lat, f.home.lon);
     if (gen !== this.generation) return;
     this.ground = ground;
+    if (!f.hasTerrain) {
+      // relative ground heights from the keyless terrain serve Google 3D too,
+      // whose absolute heights use a different reference
+      const g = f.gps;
+      let s = 90, w = 180, n = -90, e = -180;
+      for (let k = 0; k < g.t.length; k++) {
+        s = Math.min(s, g.lat[k]);
+        n = Math.max(n, g.lat[k]);
+        w = Math.min(w, g.lon[k]);
+        e = Math.max(e, g.lon[k]);
+      }
+      const sampler = await terrainSampler(s, w, n, e);
+      if (gen !== this.generation) return;
+      f.setTerrain(sampler);
+    }
 
     this.removeFlightVisuals();
     this.track = this.viewer.scene.primitives.add(trackPrimitive(f, (t) => this.position(f.poseAt(t)!)));

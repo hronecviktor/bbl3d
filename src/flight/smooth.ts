@@ -87,3 +87,34 @@ export function catmullRom(p0: number, p1: number, p2: number, p3: number, u: nu
   const u3 = u2 * u;
   return 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3);
 }
+
+/**
+ * Raise `alt` where it dips below `ground` (both per sample, same reference).
+ * Altitude errors come from slow baro/GPS drift, so the lift is a smooth
+ * offset: the needed lift is spread over ±`window`/2 samples (moving max),
+ * blurred, and never less than what's needed at each sample. Samples that
+ * are well above ground and far from any dip are left unchanged.
+ */
+export function liftAboveGround(alt: Float32Array, ground: ArrayLike<number>, window: number): Float32Array {
+  const n = alt.length;
+  const need = new Float32Array(n);
+  for (let i = 0; i < n; i++) need[i] = Math.max(0, ground[i] - alt[i]);
+  const half = Math.max(1, Math.round(window / 2));
+  // sliding-window maximum with a monotonic deque, O(n)
+  const spread = new Float32Array(n);
+  const dq = new Int32Array(n);
+  let head = 0;
+  let tail = 0;
+  for (let i = 0, next = 0; i < n; i++) {
+    for (; next < n && next <= i + half; next++) {
+      while (tail > head && need[dq[tail - 1]] <= need[next]) tail--;
+      dq[tail++] = next;
+    }
+    while (dq[head] < i - half) head++;
+    spread[i] = need[dq[head]];
+  }
+  const lift = gaussian(spread, half / 3);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = alt[i] + Math.max(lift[i], need[i]);
+  return out;
+}

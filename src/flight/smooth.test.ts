@@ -30,3 +30,22 @@ describe("smoothAttitude", () => {
     }
   });
 });
+
+import { liftAboveGround } from "./smooth";
+
+describe("liftAboveGround", () => {
+  it("never leaves the path below ground, eases the lift in, and leaves distant parts alone", () => {
+    const n = 2000;
+    const alt = new Float32Array(n).fill(5);
+    // a 30-sample-wide, 12 m tall ridge in the middle
+    const ground = Float32Array.from({ length: n }, (_, i) => (Math.abs(i - 1000) < 15 ? 12 : 0));
+    const out = liftAboveGround(alt, ground, 200);
+    for (let i = 0; i < n; i++) expect(out[i]).toBeGreaterThanOrEqual(ground[i] - 1e-6);
+    expect(out[0]).toBe(5);
+    expect(out[n - 1]).toBe(5);
+    // no jump: the biggest step is far smaller than the 7 m lift
+    let step = 0;
+    for (let i = 1; i < n; i++) step = Math.max(step, Math.abs(out[i] - out[i - 1]));
+    expect(step).toBeLessThan(1);
+  });
+});

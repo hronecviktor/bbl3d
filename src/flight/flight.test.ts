@@ -125,6 +125,38 @@ describe.skipIf(!have("btfl_010.bbl"))("btfl_010 (6 min cruise)", () => {
     expect(errs[errs.length >> 1]).toBeLessThan(rad(12));
   });
 
+  it("keeps the drawn path above the terrain at every smoothing level", () => {
+    // synthetic terrain: home is at 100 m; a sharp 25 m ridge runs east-west
+    // across the flying area, so a lift applied before smoothing would be
+    // blurred back under it
+    const home = flight.home!;
+    const ridgeLat = home.lat + 0.0006;
+    const terrain = (lat: number) => (Math.abs(lat - ridgeLat) < 0.00004 ? 125 : 100);
+    flight.setTerrain((lat) => terrain(lat));
+    const clearance = () => {
+      let worst = Infinity;
+      for (let t = 1; t < flight.duration - 1; t += 0.013) {
+        const p = flight.poseAt(t)!;
+        worst = Math.min(worst, p.relAlt - (terrain(p.lat) - 100));
+      }
+      return worst;
+    };
+    try {
+      flight.setAboveGround(false);
+      flight.setSmoothing(3);
+      expect(clearance()).toBeLessThan(-5); // the ridge is in the way
+      flight.setAboveGround(true);
+      for (const level of [0, 1, 2, 3]) {
+        flight.setSmoothing(level);
+        // poseAt interpolates between frames; allow a few cm for that
+        expect(clearance()).toBeGreaterThan(-0.05);
+      }
+    } finally {
+      flight.setTerrain(null);
+      flight.setSmoothing(0);
+    }
+  });
+
   it("smooths the replay without distorting it", () => {
     // jaggedness: mean second difference of altitude and roll at 50 Hz
     const jag = () => {
