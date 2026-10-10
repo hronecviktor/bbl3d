@@ -35,12 +35,16 @@ async function exists(url: string) {
 export interface ActiveLayers {
   mode: MapMode;
   tileset: Cesium3DTileset | null; // what the ground height is sampled from, if not terrain
+  primitives: Cesium3DTileset[]; // added to the scene by this mode; removed on switch
   note: string | null; // shown to the user (fallbacks, missing data)
+}
+
+export function removeLayers(viewer: Viewer, layers: ActiveLayers | null) {
+  for (const p of layers?.primitives ?? []) viewer.scene.primitives.remove(p);
 }
 
 export async function applyMapMode(viewer: Viewer, mode: MapMode, ionToken: string): Promise<ActiveLayers> {
   const scene = viewer.scene;
-  scene.primitives.removeAll();
   viewer.imageryLayers.removeAll();
 
   if (mode === "google3d") {
@@ -57,7 +61,7 @@ export async function applyMapMode(viewer: Viewer, mode: MapMode, ionToken: stri
       scene.globe.show = false;
       viewer.terrainProvider = new EllipsoidTerrainProvider();
       scene.primitives.add(tileset);
-      return { mode, tileset, note: null };
+      return { mode, tileset, primitives: [tileset], note: null };
     } catch (e) {
       const res = await applyMapMode(viewer, "estonia", "");
       return { ...res, note: `Google 3D failed to load (${e instanceof Error ? e.message : e}). Showing open data instead.` };
@@ -98,5 +102,5 @@ export async function applyMapMode(viewer: Viewer, mode: MapMode, ionToken: stri
     }
   }
   // buildings are for looks; heights still come from the terrain
-  return { mode, tileset: null, note };
+  return { mode, tileset: null, primitives: tileset ? [tileset] : [], note };
 }

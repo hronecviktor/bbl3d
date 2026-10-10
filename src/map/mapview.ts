@@ -20,7 +20,7 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { Flight, Pose } from "../flight/flight";
-import { applyMapMode, type ActiveLayers, type MapMode } from "./layers";
+import { applyMapMode, removeLayers, type ActiveLayers, type MapMode } from "./layers";
 import { terrainHeightAt } from "./terrain";
 
 export type CameraMode = "chase" | "fpv" | "orbit" | "top";
@@ -46,6 +46,8 @@ export class MapView {
   private chaseYaw: number | null = null;
   private lastCamera: CameraMode | null = null;
   private now = 0;
+  // bumped by every map/flight change; async work from an older one is dropped
+  private generation = 0;
 
   camera: CameraMode = "chase";
   settings: ViewSettings = { chaseDistance: 6, chaseHeight: 15, fpvUptilt: 30, fpvFov: 118 };
@@ -73,18 +75,29 @@ export class MapView {
   }
 
   async setMapMode(mode: MapMode, ionToken: string): Promise<string | null> {
+    const gen = ++this.generation;
     this.removeFlightVisuals();
-    this.layers = await applyMapMode(this.viewer, mode, ionToken);
-    if (this.flight) await this.addFlightVisuals();
-    return this.layers.note;
+    removeLayers(this.viewer, this.layers);
+    this.layers = null;
+    const layers = await applyMapMode(this.viewer, mode, ionToken);
+    if (gen !== this.generation) {
+      // a newer switch started while this one loaded
+      removeLayers(this.viewer, layers);
+      return null;
+    }
+    this.layers = layers;
+    if (this.flight) await this.addFlightVisuals(gen);
+    return layers.note;
   }
 
   async setFlight(flight: Flight | null) {
+    const gen = ++this.generation;
     this.removeFlightVisuals();
     this.flight = flight;
     this.chaseYaw = null;
     this.lastCamera = null;
-    if (flight) await this.addFlightVisuals();
+    // the map may still be switching; it adds the visuals when done
+    if (flight && this.layers) await this.addFlightVisuals(gen);
   }
 
   private removeFlightVisuals() {
@@ -96,12 +109,14 @@ export class MapView {
     this.trail = null;
   }
 
-  private async addFlightVisuals() {
+  private async addFlightVisuals(gen: number) {
     const f = this.flight;
     if (!f?.home || !f.gps) return;
-    this.ground = await this.sampleGround(f.home.lat, f.home.lon);
-    if (f !== this.flight) return;
+    const ground = await this.sampleGround(f.home.lat, f.home.lon);
+    if (gen !== this.generation) return;
+    this.ground = ground;
 
+    this.removeFlightVisuals();
     this.track = this.viewer.scene.primitives.add(trackPrimitive(f, (t) => this.position(f.poseAt(t)!)));
     this.trail = this.viewer.entities.add({
       polyline: {
@@ -117,9 +132,12 @@ export class MapView {
         material: Color.WHITE.withAlpha(0.85),
       },
     });
-    this.quad = this.viewer.scene.primitives.add(
-      await Model.fromGltfAsync({ url: "models/quad.glb", minimumPixelSize: 40, maximumScale: 200 }),
-    );
+    const quad = await Model.fromGltfAsync({ url: "models/quad.glb", minimumPixelSize: 40, maximumScale: 200 });
+    if (gen !== this.generation) {
+      quad.destroy();
+      return;
+    }
+    this.quad = this.viewer.scene.primitives.add(quad);
     this.update(this.time());
   }
 

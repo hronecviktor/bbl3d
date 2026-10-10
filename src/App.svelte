@@ -28,7 +28,8 @@
     map = new MapView(mapEl, () => app.t);
     let last = performance.now();
     let raf = requestAnimationFrame(function loop(now) {
-      const dt = Math.min(0.1, (now - last) / 1000);
+      // keep real time on slow renderers; ignore long gaps (hidden tab)
+      const dt = Math.min(0.5, (now - last) / 1000);
       last = now;
       const f = current.flight;
       if (app.playing && f) {
