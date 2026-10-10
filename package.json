@@ -1,0 +1,31 @@
+{
+  "name": "bbl3d",
+  "version": "1.0.0",
+  "description": "Betaflight blackbox 3D flight replay",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "cesium": "^1.146.0",
+    "semver": "^7.8.5",
+    "uplot": "^1.6.32"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/semver": "^7.8.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
+    "typescript": "~5.9",
+    "vite": "^8.3.4",
+    "vite-plugin-static-copy": "^4.1.1",
+    "vitest": "^5.0.3"
+  },
+  "type": "module",
+  "private": true
+}

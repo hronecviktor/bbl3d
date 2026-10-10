@@ -1,0 +1,8 @@
+node_modules/
+dist/
+fixtures/
+scratch/
+public/tiles/
+scripts/ee-buildings/work/
+test-results/
+playwright-report/
