@@ -21,7 +21,7 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { Flight, Pose } from "../flight/flight";
 import { applyMapMode, removeLayers, type ActiveLayers, type MapMode } from "./layers";
-import { terrainHeightAt, terrainSampler } from "./terrain";
+import { terrainHeightAt, terrainSampler, worldTerrainSampler } from "./terrain";
 
 export type CameraMode = "chase" | "fpv" | "orbit" | "top";
 
@@ -86,6 +86,8 @@ export class MapView {
       return null;
     }
     this.layers = layers;
+    // the terrain used for the above-ground correction depends on the map
+    this.flight?.setTerrain(null);
     if (this.flight) await this.addFlightVisuals(gen);
     return layers.note;
   }
@@ -123,8 +125,6 @@ export class MapView {
     if (gen !== this.generation) return;
     this.ground = ground;
     if (!f.hasTerrain) {
-      // relative ground heights from the keyless terrain serve Google 3D too,
-      // whose absolute heights use a different reference
       const g = f.gps;
       let s = 90, w = 180, n = -90, e = -180;
       for (let k = 0; k < g.t.length; k++) {
@@ -133,9 +133,13 @@ export class MapView {
         w = Math.min(w, g.lon[k]);
         e = Math.max(e, g.lon[k]);
       }
-      const sampler = await terrainSampler(s, w, n, e);
+      // Google 3D: Cesium World Terrain, compared with Google's own height at
+      // home (both ellipsoidal). Otherwise, and as a fallback, the keyless
+      // terrain relative to its own height at home (it is also what's drawn).
+      const world = this.layers?.mode === "google3d" ? await worldTerrainSampler(s, w, n, e) : null;
+      const sampler = world ?? (await terrainSampler(s, w, n, e));
       if (gen !== this.generation) return;
-      f.setTerrain(sampler);
+      f.setTerrain(sampler, world ? ground : null);
     }
 
     this.removeFlightVisuals();

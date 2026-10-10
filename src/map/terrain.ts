@@ -1,7 +1,14 @@
 // Keyless terrain from AWS Terrain Tiles (terrarium PNGs, Web Mercator, max
 // zoom 15), meshed by Cesium's CustomHeightmapTerrainProvider. Deeper levels
 // resample their level-15 ancestor.
-import { Credit, CustomHeightmapTerrainProvider, WebMercatorTilingScheme } from "cesium";
+import {
+  Cartographic,
+  CesiumTerrainProvider,
+  Credit,
+  CustomHeightmapTerrainProvider,
+  WebMercatorTilingScheme,
+  sampleTerrainMostDetailed,
+} from "cesium";
 
 const URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
 const MAX_ZOOM = 15;
@@ -123,4 +130,47 @@ function bilinear(h: Float32Array, x: number, y: number) {
   const a = h[y0 * 256 + x0] * (1 - fx) + h[y0 * 256 + x1] * fx;
   const b = h[y1 * 256 + x0] * (1 - fx) + h[y1 * 256 + x1] * fx;
   return a * (1 - fy) + b * fy;
+}
+
+/**
+ * Cesium World Terrain (ion asset 1, needs the ion token) sampled on a grid
+ * over a lat/lon box, as a synchronous sampler. Heights are ellipsoidal, like
+ * Google's 3D tiles. Returns null if the terrain can't be loaded.
+ */
+export async function worldTerrainSampler(
+  south: number,
+  west: number,
+  north: number,
+  east: number,
+  spacing = 20,
+): Promise<((lat: number, lon: number) => number | null) | null> {
+  try {
+    const provider = await CesiumTerrainProvider.fromIonAssetId(1);
+    const pad = 0.002;
+    const lat0 = south - pad;
+    const lon0 = west - pad;
+    const dLat = spacing / 111320;
+    const dLon = spacing / (111320 * Math.cos((((south + north) / 2) * Math.PI) / 180));
+    const rows = Math.ceil((north + pad - lat0) / dLat) + 1;
+    const cols = Math.ceil((east + pad - lon0) / dLon) + 1;
+    if (rows * cols > 40000) return null;
+    const points: Cartographic[] = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) points.push(Cartographic.fromDegrees(lon0 + c * dLon, lat0 + r * dLat));
+    const sampled = await sampleTerrainMostDetailed(provider, points);
+    const h = Float32Array.from(sampled, (p) => p.height ?? NaN);
+    return (lat, lon) => {
+      const fr = (lat - lat0) / dLat;
+      const fc = (lon - lon0) / dLon;
+      const r = Math.floor(fr);
+      const c = Math.floor(fc);
+      if (r < 0 || c < 0 || r >= rows - 1 || c >= cols - 1) return null;
+      const a = fr - r;
+      const b = fc - c;
+      const v =
+        h[r * cols + c] * (1 - a) * (1 - b) + h[r * cols + c + 1] * (1 - a) * b + h[(r + 1) * cols + c] * a * (1 - b) + h[(r + 1) * cols + c + 1] * a * b;
+      return Number.isNaN(v) ? null : v;
+    };
+  } catch {
+    return null;
+  }
 }

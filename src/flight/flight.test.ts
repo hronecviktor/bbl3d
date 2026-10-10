@@ -157,6 +157,35 @@ describe.skipIf(!have("btfl_010.bbl"))("btfl_010 (6 min cruise)", () => {
     }
   });
 
+  it("doesn't let a terrain-model error at home lift the whole flight", () => {
+    // like Corcovado: the model is 80 m off right at the takeoff spot only
+    const home = flight.home!;
+    const near = (lat: number, lon: number) => Math.hypot(lat - home.lat, (lon - home.lon) * 0.5) < 0.0002;
+    const sampler = (lat: number, lon: number) => (near(lat, lon) ? 20 : 100);
+    const lifted = () => {
+      let sum = 0;
+      let n = 0;
+      flight.setAboveGround(false);
+      const raw = Array.from({ length: 200 }, (_, k) => flight.poseAt(30 + k)!.relAlt);
+      flight.setAboveGround(true);
+      for (let k = 0; k < 200; k++) {
+        sum += flight.poseAt(30 + k)!.relAlt - raw[k];
+        n++;
+      }
+      return sum / n;
+    };
+    try {
+      flight.setSmoothing(2);
+      flight.setTerrain(sampler); // relative to the model's (wrong) height at home
+      expect(lifted()).toBeGreaterThan(50);
+      flight.setTerrain(sampler, 100); // the replay's true home height
+      expect(lifted()).toBeLessThan(1);
+    } finally {
+      flight.setTerrain(null);
+      flight.setSmoothing(0);
+    }
+  });
+
   it("smooths the replay without distorting it", () => {
     // jaggedness: mean second difference of altitude and roll at 50 Hz
     const jag = () => {

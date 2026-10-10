@@ -81,8 +81,10 @@ export class Flight {
   smoothing = 0;
   /** Keep the replayed path from dipping below the terrain (needs setTerrain). */
   aboveGround = true;
-  // terrain height (m) at a position, absolute; only differences are used
+  // terrain height (m) at a position, and the height of the home point in the
+  // same reference (null: take it from the sampler at home)
   private terrain: ((lat: number, lon: number) => number | null) | null = null;
+  private terrainHome: number | null = null;
   private converted = new Map<string, Float32Array | Float64Array>();
 
   constructor(x: ExtractedLog, summary: LogSummary) {
@@ -216,9 +218,15 @@ export class Flight {
     return this.terrain !== null;
   }
 
-  /** Terrain height sampler (synchronous, absolute metres); null to clear. */
-  setTerrain(sampler: ((lat: number, lon: number) => number | null) | null) {
+  /**
+   * Terrain height sampler (synchronous, metres); null to clear. `homeHeight`
+   * is the height the replay puts the takeoff point at, in the sampler's
+   * reference. Without it the sampler's own height at home is used, which
+   * passes any error of the terrain model at home on to the whole flight.
+   */
+  setTerrain(sampler: ((lat: number, lon: number) => number | null) | null, homeHeight: number | null = null) {
     this.terrain = sampler;
+    this.terrainHome = homeHeight;
     this.sources.clear();
     this.setSmoothing(this.smoothing);
   }
@@ -238,7 +246,7 @@ export class Flight {
   private groundProfile(path: Pick<PoseSource, "lat" | "lon" | "curved">): Float32Array | null {
     const sample = this.terrain;
     if (!sample || !this.gps || !this.home) return null;
-    const home = sample(this.home.lat, this.home.lon);
+    const home = this.terrainHome ?? sample(this.home.lat, this.home.lon);
     if (home === null) return null;
     const out = new Float32Array(this.t.length);
     for (let i = 0; i < out.length; i++) {
