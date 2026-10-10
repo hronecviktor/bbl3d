@@ -26,7 +26,7 @@ Blackbox Explorer synced underneath. <a href="docs/demo.mp4">Watch the full-qual
 
 <br><br>
 
-**[Try it at bbl3d.0s.is →](https://bbl3d.0s.is)**<br>
+**[Try it at bbl3d.0s.is →](https://bbl3d.0s.is) or [bbl3d.weyland.enterprises →](https://bbl3d.weyland.enterprises)**<br>
 <sub>No install and no account. Pick a sample flight or drop your own log.</sub>
 
 </div>
@@ -130,12 +130,10 @@ The photorealistic map is served through [Cesium ion](https://cesium.com/platfor
 The free **Community** plan covers it, and you don't need a credit card.
 
 1. **Sign up** at [ion.cesium.com/signup](https://ion.cesium.com/signup) and pick the free Community plan.
-2. **Check your assets.** Open **My Assets** and make sure **Google Photorealistic 3D Tiles**
-   and **Cesium World Terrain** are listed. If either is missing, add it from the **Asset Depot**.
-3. **Copy a token.** Go to **Access Tokens** and copy the *Default* token.
+2. **Copy a token.** Go to **Access Tokens** and copy the *Default* token.
    Optionally, create a dedicated token instead: give it the `assets:read` scope, select those two
    assets, and set **Allowed URLs** to `https://bbl3d.0s.is` so it can't be used anywhere else.
-4. **Paste it into bbl3d.** In [bbl3d](https://bbl3d.0s.is), open **⚙ Settings**, paste the
+3. **Paste it into bbl3d.** In [bbl3d](https://bbl3d.0s.is), open **⚙ Settings**, paste the
    token and set **Map** to **Google 3D**.
 
 The token is stored only in your browser's local storage. The Community plan is for personal,
