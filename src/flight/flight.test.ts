@@ -106,4 +106,22 @@ describe.skipIf(!have("btfl_010.bbl"))("btfl_010 (6 min cruise)", () => {
     errs.sort((a, b) => a - b);
     expect(errs[errs.length >> 1]).toBeLessThan(rad(15));
   });
+
+  it("banks like a coordinated turn in fast turns", () => {
+    // bank ≈ atan(v·ω/g); a gyro+accelerometer-only estimate drifts toward
+    // level here (~20° median error), the GPS-aided one shouldn't
+    const g = flight.gps!;
+    const errs: number[] = [];
+    for (let k = 2; k < g.t.length - 2; k++) {
+      const dt = g.t[k + 2] - g.t[k - 2];
+      if (g.speed[k] < 10 || dt <= 0 || dt > 1) continue;
+      const w = wrapPi(rad(g.course[k + 2] - g.course[k - 2])) / dt;
+      if (Math.abs(w) < rad(15)) continue;
+      const bank = Math.atan((g.speed[k] * w) / 9.81);
+      errs.push(Math.abs(flight.poseAt(g.t[k])!.roll - bank));
+    }
+    errs.sort((a, b) => a - b);
+    expect(errs.length).toBeGreaterThan(500);
+    expect(errs[errs.length >> 1]).toBeLessThan(rad(12));
+  });
 });

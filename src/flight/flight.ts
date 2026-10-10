@@ -2,6 +2,7 @@
 // map, HUD, timeline and charts need (units, GPS samples, fused heading, modes,
 // events).
 import type { ExtractedLog, LogSummary } from "../parser/extract";
+import { estimateAttitude, type Attitude } from "./attitude";
 import { boxNames, decodeModes, modeIntervals, type ModeInterval } from "./modes";
 
 export const EVENT = { SYNC_BEEP: 0, INFLIGHT_ADJUSTMENT: 13, LOGGING_RESUME: 14, DISARM: 15, FLIGHT_MODE: 30, LOG_END: 255 };
@@ -38,13 +39,12 @@ export interface Pose {
   yaw: number; // rad, 0 = north, clockwise
 }
 
-const GPS_FUSION_MIN_SPEED = 5; // m/s
-const GPS_FUSION_TAU = 4; // s, time constant of the heading-offset filter
+const COURSE_MIN_SPEED = 5; // m/s; below this the GPS course is too noisy for heading
 
 export class Flight {
   readonly summary: LogSummary;
   readonly sysConfig: Record<string, any>;
-  readonly fieldNames: string[];
+  fieldNames: string[];
   readonly t: Float64Array; // s from log start
   readonly duration: number;
   readonly gps: GpsTrack | null;
@@ -53,10 +53,14 @@ export class Flight {
   readonly events: FlightEvent[];
   readonly cutOff: boolean;
   readonly boxNames: string[] | null;
-  /** Heading after pulling the IMU estimate onto the GPS course, rad. */
-  readonly yaw: Float32Array;
+  /** GPS-aided attitude estimate (see attitude.ts), rad. */
+  readonly attitude: Attitude;
   /** Altitude above the home point, m (baro when logged, else GPS). */
   readonly relAlt: Float32Array;
+  /** Charge used since log start, mAh (integrated current). */
+  readonly mAh: Float32Array | null;
+  /** Battery cell count estimated from the starting voltage. */
+  readonly cells: number;
 
   private cols = new Map<string, Float32Array | Float64Array>();
   private converted = new Map<string, Float32Array | Float64Array>();
@@ -78,8 +82,16 @@ export class Flight {
     this.home = this.findHome();
     this.events = this.buildEvents(x, t0);
     this.cutOff = !x.events.some((e) => e.type === EVENT.LOG_END);
-    this.yaw = this.fuseHeading();
     this.relAlt = this.buildRelAlt();
+    this.attitude = this.buildAttitude();
+    // expose the estimate to charts, in degrees
+    const deg = (a: Float32Array) => a.map((v) => (v * 180) / Math.PI);
+    this.cols.set("attitude.roll", deg(this.attitude.roll));
+    this.cols.set("attitude.pitch", deg(this.attitude.pitch));
+    this.cols.set("attitude.heading", deg(this.attitude.yaw));
+    this.fieldNames = [...this.fieldNames, "attitude.roll", "attitude.pitch", "attitude.heading"];
+    this.mAh = this.buildMah();
+    this.cells = this.estimateCells();
   }
 
   has(name: string) {
@@ -187,8 +199,7 @@ export class Flight {
     const k = span > 0 ? Math.min(1, Math.max(0, (t - this.t[i]) / span)) : 0;
     const lerp = (a: ArrayLike<number>) => a[i] + (a[j] - a[i]) * k;
     const lerpAngle = (a: ArrayLike<number>) => a[i] + wrapPi(a[j] - a[i]) * k;
-    const roll = this.cols.get("heading[0]");
-    const pitch = this.cols.get("heading[1]");
+    const att = this.attitude;
 
     // GPS position, interpolated between fixes
     let gi = upperBound(g.t, t) - 1;
@@ -209,10 +220,9 @@ export class Flight {
       lat,
       lon,
       relAlt: lerp(this.relAlt),
-      roll: roll ? lerpAngle(roll) : 0,
-      // the IMU estimate is positive nose-down
-      pitch: pitch ? -lerpAngle(pitch) : 0,
-      yaw: lerpAngle(this.yaw),
+      roll: lerpAngle(att.roll),
+      pitch: lerpAngle(att.pitch),
+      yaw: lerpAngle(att.yaw),
     };
   }
 
@@ -302,58 +312,127 @@ export class Flight {
     return out;
   }
 
-  /**
-   * Without a magnetometer the IMU heading has an arbitrary start offset and
-   * drifts. When moving fast enough, ground course is a good heading reference,
-   * so estimate the offset from it with a zero-phase (forward + backward)
-   * first-order filter and add it to the IMU heading.
-   */
-  private fuseHeading(): Float32Array {
+  private buildAttitude(): Attitude {
     const n = this.t.length;
-    const imu = this.cols.get("heading[2]");
-    const out = new Float32Array(n);
-    if (!imu) return out;
+    const gyro = [0, 1, 2].map((k) => this.cols.get(`gyroADC[${k}]`));
+    const acc = [0, 1, 2].map((k) => this.cols.get(`accSmooth[${k}]`));
+    if (gyro.some((c) => !c) || acc.some((c) => !c)) {
+      return { roll: new Float32Array(n), pitch: new Float32Array(n), yaw: new Float32Array(n) };
+    }
+    // raw gyro → deg/s (Betaflight 4+: gyro_scale makes raw = deg/s)
+    const gScale = (Number(this.sysConfig.gyroScale) * 1e6 * 180) / Math.PI || 1;
+    const one = Number(this.sysConfig.acc_1G) || 2048;
+    const scaled = (c: ArrayLike<number>, k: number) => Float32Array.from(c as ArrayLike<number>, (v) => v * k);
     const g = this.gps;
-    if (!g) {
-      out.set(imu);
-      return out;
-    }
-    // offset measurements at each GPS fix while moving
-    const meas = new Float64Array(n).fill(NaN);
-    let fix = 0;
-    for (let i = 0; i < n; i++) {
-      while (fix + 1 < g.t.length && g.t[fix + 1] <= this.t[i]) fix++;
-      if (g.t[fix] === this.t[i] && g.speed[fix] >= GPS_FUSION_MIN_SPEED) {
-        meas[i] = wrapPi(rad(g.course[fix]) - imu[i]);
-      }
-    }
-    const first = meas.findIndex((v) => !Number.isNaN(v));
-    if (first < 0) {
-      out.set(imu);
-      return out;
-    }
-    const pass = (from: number, to: number, step: number) => {
-      const est = new Float64Array(n);
-      let o = meas[first];
-      let lastT = this.t[from];
-      for (let i = from; i !== to; i += step) {
-        if (!Number.isNaN(meas[i])) {
-          // weight each fix by the time since the previous one
-          const dt = Math.min(1, Math.max(0.05, Math.abs(this.t[i] - lastT)));
-          o += wrapPi(meas[i] - o) * (1 - Math.exp(-dt / GPS_FUSION_TAU));
-          lastT = this.t[i];
-        }
-        est[i] = o;
-      }
-      return est;
-    };
-    const fwd = pass(0, n, 1);
-    const bwd = pass(n - 1, -1, -1);
-    for (let i = 0; i < n; i++) {
-      const o = fwd[i] + wrapPi(bwd[i] - fwd[i]) / 2;
-      out[i] = wrap2Pi(imu[i] + o);
+    const fixAt = this.gpsIndexPerFrame();
+    const accel = this.worldAcceleration();
+    return estimateAttitude({
+      t: this.t,
+      gyro: gyro.map((c) => scaled(c!, gScale)) as [Float32Array, Float32Array, Float32Array],
+      acc: acc.map((c) => scaled(c!, 1 / one)) as [Float32Array, Float32Array, Float32Array],
+      accelWorld: accel ? (i) => [accel[0][i], accel[1][i], accel[2][i]] : null,
+      course: (i) => {
+        const k = fixAt[i];
+        return g && k >= 0 && g.speed[k] >= COURSE_MIN_SPEED ? rad(g.course[k]) : NaN;
+      },
+    });
+  }
+
+  /** For each frame, the index of the latest GPS fix (-1 before the first). */
+  private gpsIndexPerFrame(): Int32Array {
+    const out = new Int32Array(this.t.length).fill(-1);
+    const g = this.gps;
+    if (!g) return out;
+    let k = -1;
+    for (let i = 0; i < this.t.length; i++) {
+      while (k + 1 < g.t.length && g.t[k + 1] <= this.t[i]) k++;
+      out[i] = k;
     }
     return out;
+  }
+
+  /**
+   * Craft acceleration in east/north/up (m/s²) per frame: horizontal from the
+   * GPS velocity (speed + course), vertical from the altitude. Differences
+   * span ±0.25 s to keep GPS and baro noise down.
+   */
+  private worldAcceleration(): [Float32Array, Float32Array, Float32Array] | null {
+    const g = this.gps;
+    if (!g || g.t.length < 5) return null;
+    const m = g.t.length;
+    const vE = new Float64Array(m);
+    const vN = new Float64Array(m);
+    for (let k = 0; k < m; k++) {
+      vE[k] = g.speed[k] * Math.sin(rad(g.course[k]));
+      vN[k] = g.speed[k] * Math.cos(rad(g.course[k]));
+    }
+    const fixAcc = (v: Float64Array) => {
+      const a = new Float64Array(m);
+      for (let k = 0; k < m; k++) {
+        let lo = k;
+        let hi = k;
+        while (lo > 0 && g.t[k] - g.t[lo - 1] <= 0.25) lo--;
+        while (hi < m - 1 && g.t[hi + 1] - g.t[k] <= 0.25) hi++;
+        const dt = g.t[hi] - g.t[lo];
+        a[k] = dt > 0 ? (v[hi] - v[lo]) / dt : 0;
+      }
+      return a;
+    };
+    const aE = fixAcc(vE);
+    const aN = fixAcc(vN);
+    const n = this.t.length;
+    const out: [Float32Array, Float32Array, Float32Array] = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const t = this.t[i];
+      while (k + 1 < m && g.t[k + 1] <= t) k++;
+      const k1 = Math.min(k + 1, m - 1);
+      const span = g.t[k1] - g.t[k];
+      const w = span > 0 ? Math.min(1, Math.max(0, (t - g.t[k]) / span)) : 0;
+      out[0][i] = aE[k] + (aE[k1] - aE[k]) * w;
+      out[1][i] = aN[k] + (aN[k1] - aN[k]) * w;
+    }
+    // vertical: second difference of the altitude over ±0.25 s
+    const alt = this.relAlt;
+    let lo = 0;
+    let hi = 0;
+    for (let i = 0; i < n; i++) {
+      while (this.t[i] - this.t[lo] > 0.25) lo++;
+      while (hi < n - 1 && this.t[hi + 1] - this.t[i] <= 0.25) hi++;
+      const h1 = this.t[hi] - this.t[i];
+      const h0 = this.t[i] - this.t[lo];
+      out[2][i] = h0 > 0 && h1 > 0 ? (((alt[hi] - alt[i]) / h1 - (alt[i] - alt[lo]) / h0) * 2) / (h0 + h1) : 0;
+    }
+    return out;
+  }
+
+  private buildMah(): Float32Array | null {
+    const amps = this.series("amperageLatest");
+    if (!amps) return null;
+    const out = new Float32Array(amps.length);
+    for (let i = 1; i < amps.length; i++) {
+      const dt = this.t[i] - this.t[i - 1];
+      out[i] = out[i - 1] + (Math.max(0, amps[i]) * dt * 1000) / 3600;
+    }
+    return out;
+  }
+
+  private estimateCells(): number {
+    const v = this.series("vbatLatest");
+    if (!v || !v.length) return 0;
+    // vbatcellvoltage header max is in 0.01 V; the parser's default (43) in 0.1 V
+    const raw = Number(this.sysConfig.vbatmaxcellvoltage);
+    const maxCell = raw > 100 ? raw / 100 : raw > 0 ? raw / 10 : 4.35;
+    return Math.max(1, Math.ceil(v[Math.min(10, v.length - 1)] / maxCell));
+  }
+
+  /** Distance (m) and bearing (rad, compass) from the pose to home. */
+  homeVector(p: Pose): { distance: number; bearing: number } | null {
+    if (!this.home) return null;
+    const R = 6371000;
+    const dN = rad(this.home.lat - p.lat) * R;
+    const dE = rad(this.home.lon - p.lon) * R * Math.cos(rad(p.lat));
+    return { distance: Math.hypot(dN, dE), bearing: Math.atan2(dE, dN) };
   }
 
   private buildRelAlt(): Float32Array {
@@ -390,6 +469,9 @@ const UNITS: Record<string, string> = {
   GPS_speed: "m/s",
   GPS_ground_course: "°",
   heading: "°",
+  "attitude.roll": "°",
+  "attitude.pitch": "°",
+  "attitude.heading": "°",
   gyroADC: "°/s",
   gyroUnfilt: "°/s",
   setpoint: "°/s",
