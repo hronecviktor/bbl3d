@@ -20,7 +20,7 @@
         Source
         <select bind:value={prefs.mapMode}>
           <option value="google3d">Google Photorealistic 3D (needs Cesium ion token)</option>
-          <option value="estonia">Open data: Estonian orthophoto + terrain</option>
+          <option value="estonia">Open data: Estonian orthophoto, terrain, buildings, trees</option>
         </select>
       </label>
       <label>
@@ -30,6 +30,10 @@
       <p class="hint">
         Free Community account at <a href="https://ion.cesium.com/signup" target="_blank" rel="noreferrer">ion.cesium.com</a>
         (personal, non-commercial use). Copy the default token from Access Tokens. It's stored only in this browser.
+      </p>
+      <p class="hint">
+        Open-data buildings and trees are built locally per municipality with
+        <code>npm run tiles:ee -- --area Tallinn</code> (see README).
       </p>
     </section>
 
